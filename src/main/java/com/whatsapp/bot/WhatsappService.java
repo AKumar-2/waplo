@@ -36,6 +36,9 @@ public class WhatsappService {
     @Value("${whatsapp.global.image.path:#{null}}")
     private String globalImagePath;
 
+    @Value("${whatsapp.browser.headless:true}")
+    private boolean headless;
+
     private Playwright playwright;
     private Browser browser;
     private Page page;
@@ -49,7 +52,7 @@ public class WhatsappService {
             try {
                 System.out.println("Starting Playwright automation...");
                 playwright = Playwright.create();
-                browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(false));
+                browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(headless));
                 BrowserContext context = browser.newContext();
                 page = context.newPage();
 
