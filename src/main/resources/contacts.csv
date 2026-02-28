@@ -1,3 +1,3 @@
-phone,message
-+1234567890,Hello from Spring Boot Bot!
-+0987654321,This is an automated message!
+phone,message,image_path
++1234567890,Hello from Spring Boot Bot! with an image,src/main/resources/sample.jpg
++0987654321,This is a text-only automated message!,
