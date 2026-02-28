@@ -14,6 +14,11 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
@@ -31,47 +36,100 @@ public class WhatsappService {
     @Value("${whatsapp.global.image.path:#{null}}")
     private String globalImagePath;
 
-    public void startAutomation() {
-        System.out.println("Starting WhatsApp automation...");
+    private Playwright playwright;
+    private Browser browser;
+    private Page page;
+    private final BlockingQueue<Runnable> taskQueue = new LinkedBlockingQueue<>();
+    private Thread playwrightThread;
+    private volatile boolean running = true;
 
-        List<Contact> contacts = readContactsFromCsv();
-        if (contacts.isEmpty()) {
-            System.out.println("No contacts found in contacts.csv. Exiting.");
-            return;
+    @PostConstruct
+    public void init() {
+        playwrightThread = new Thread(() -> {
+            try {
+                System.out.println("Starting Playwright automation...");
+                playwright = Playwright.create();
+                browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(false));
+                BrowserContext context = browser.newContext();
+                page = context.newPage();
+
+                System.out.println("Opening WhatsApp Web. Please scan the QR code to log in...");
+                page.navigate("https://web.whatsapp.com/");
+
+                // Increase login timeout to 180 seconds to allow for scanning and syncing
+                page.waitForSelector("#pane-side", new Page.WaitForSelectorOptions().setTimeout(180000));
+                System.out.println("Logged in successfully! Ready to send messages...");
+
+                // Wait a bit more for all initial sync processes to finish
+                page.waitForTimeout(5000);
+
+                while (running) {
+                    Runnable task = taskQueue.poll(1, java.util.concurrent.TimeUnit.SECONDS);
+                    if (task != null) {
+                        try {
+                            task.run();
+                        } catch (Exception e) {
+                            System.err.println("Error executing task: " + e.getMessage());
+                            e.printStackTrace();
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("An error occurred during WhatsApp automation initialization: " + e.getMessage());
+                e.printStackTrace();
+            } finally {
+                if (browser != null) {
+                    browser.close();
+                }
+                if (playwright != null) {
+                    playwright.close();
+                }
+            }
+        });
+        playwrightThread.start();
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        running = false;
+        if (playwrightThread != null) {
+            playwrightThread.interrupt();
         }
+    }
 
-        try (Playwright playwright = Playwright.create()) {
-            Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(false));
-            BrowserContext context = browser.newContext();
-            Page page = context.newPage();
+    public void queueMessages(List<String> phones, String message, String imagePath) {
+        taskQueue.offer(() -> {
+            List<Contact> allContacts = readContactsFromCsv();
 
-            System.out.println("Opening WhatsApp Web. Please scan the QR code to log in...");
-            page.navigate("https://web.whatsapp.com/");
+            for (String phone : phones) {
+                // Find contact's default message/image if any
+                String defaultMessage = null;
+                String defaultImagePath = null;
+                for (Contact c : allContacts) {
+                    if (c.phone.equals(phone)) {
+                        defaultMessage = c.message;
+                        defaultImagePath = c.imagePath;
+                        break;
+                    }
+                }
 
-            // Increase login timeout to 180 seconds to allow for scanning and syncing
-            page.waitForSelector("#pane-side", new Page.WaitForSelectorOptions().setTimeout(180000));
-            System.out.println("Logged in successfully! Starting to send messages...");
+                // Prioritize global > explicit UI override > contact default
+                String resolvedMessage = (globalMessage != null && !globalMessage.trim().isEmpty()) ? globalMessage : message;
+                if (resolvedMessage == null || resolvedMessage.trim().isEmpty()) {
+                    resolvedMessage = defaultMessage;
+                }
 
-            // Wait a bit more for all initial sync processes to finish
-            page.waitForTimeout(5000);
+                String resolvedImagePath = (globalImagePath != null && !globalImagePath.trim().isEmpty()) ? globalImagePath : imagePath;
+                if (resolvedImagePath == null || resolvedImagePath.trim().isEmpty()) {
+                    resolvedImagePath = defaultImagePath;
+                }
 
-            for (Contact contact : contacts) {
-                // Use global settings if provided, otherwise use CSV data
-                String finalMessage = (globalMessage != null && !globalMessage.trim().isEmpty()) ? globalMessage : contact.message;
-                String finalImagePath = (globalImagePath != null && !globalImagePath.trim().isEmpty()) ? globalImagePath : contact.imagePath;
-
-                sendMessageAndImage(page, contact.phone, finalMessage, finalImagePath);
+                sendMessageAndImage(page, phone, resolvedMessage, resolvedImagePath);
 
                 System.out.println("Waiting " + (intervalMs/1000) + " seconds before the next message...");
                 page.waitForTimeout(intervalMs);
             }
-
-            System.out.println("All messages sent successfully!");
-            browser.close();
-        } catch (Exception e) {
-            System.err.println("An error occurred during WhatsApp automation: " + e.getMessage());
-            e.printStackTrace();
-        }
+        });
     }
 
     private void sendMessageAndImage(Page page, String phone, String message, String imagePath) {
@@ -158,7 +216,7 @@ public class WhatsappService {
         }
     }
 
-    private List<Contact> readContactsFromCsv() {
+    public List<Contact> readContactsFromCsv() {
         List<Contact> contacts = new ArrayList<>();
         try {
             InputStream is = getClass().getClassLoader().getResourceAsStream("contacts.csv");
@@ -184,15 +242,19 @@ public class WhatsappService {
         return contacts;
     }
 
-    private static class Contact {
-        String phone;
-        String message;
-        String imagePath;
+    public static class Contact {
+        public String phone;
+        public String message;
+        public String imagePath;
 
-        Contact(String phone, String message, String imagePath) {
+        public Contact(String phone, String message, String imagePath) {
             this.phone = phone;
             this.message = message;
             this.imagePath = imagePath;
         }
+
+        public String getPhone() { return phone; }
+        public String getMessage() { return message; }
+        public String getImagePath() { return imagePath; }
     }
 }
