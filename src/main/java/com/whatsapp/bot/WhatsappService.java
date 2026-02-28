@@ -48,19 +48,21 @@ public class WhatsappService {
             System.out.println("Opening WhatsApp Web. Please scan the QR code to log in...");
             page.navigate("https://web.whatsapp.com/");
 
-            page.waitForSelector("#pane-side", new Page.WaitForSelectorOptions().setTimeout(60000));
+            page.waitForSelector("#pane-side", new Page.WaitForSelectorOptions().setTimeout(600000));
             System.out.println("Logged in successfully! Starting to send messages...");
 
-            page.waitForTimeout(3000);
+            page.waitForTimeout(30000);
 
             for (Contact contact : contacts) {
                 // Use global settings if provided, otherwise use CSV data
-                String finalMessage = (globalMessage != null && !globalMessage.trim().isEmpty()) ? globalMessage : contact.message;
-                String finalImagePath = (globalImagePath != null && !globalImagePath.trim().isEmpty()) ? globalImagePath : contact.imagePath;
+                String finalMessage = (globalMessage != null && !globalMessage.trim().isEmpty()) ? globalMessage
+                        : contact.message;
+                String finalImagePath = (globalImagePath != null && !globalImagePath.trim().isEmpty()) ? globalImagePath
+                        : contact.imagePath;
 
                 sendMessageAndImage(page, contact.phone, finalMessage, finalImagePath);
 
-                System.out.println("Waiting " + (intervalMs/1000) + " seconds before the next message...");
+                System.out.println("Waiting " + (intervalMs / 1000) + " seconds before the next message...");
                 page.waitForTimeout(intervalMs);
             }
 
@@ -81,13 +83,15 @@ public class WhatsappService {
             // Navigate directly to the chat
             String url = "https://web.whatsapp.com/send?phone=" + cleanPhone;
             if (message != null && (imagePath == null || imagePath.isEmpty())) {
-                 // If no image, we can pre-fill text
-                 url += "&text=" + URLEncoder.encode(message, StandardCharsets.UTF_8);
+                // If no image, we can pre-fill text
+                url += "&text=" + URLEncoder.encode(message, StandardCharsets.UTF_8);
             }
             page.navigate(url);
 
-            // Wait for the chat to load completely by checking for the attach menu or message input
-            page.waitForSelector("div[title='Attach'], span[data-icon='clip']", new Page.WaitForSelectorOptions().setTimeout(30000));
+            // Wait for the chat to load completely by checking for the attach menu or
+            // message input
+            page.waitForSelector("div[title='Attach'], span[data-icon='clip']",
+                    new Page.WaitForSelectorOptions().setTimeout(30000));
 
             if (imagePath != null && !imagePath.trim().isEmpty()) {
                 Path path = Paths.get(imagePath);
@@ -103,7 +107,8 @@ public class WhatsappService {
                     page.setInputFiles("input[accept='image/*,video/mp4,video/3gpp,video/quicktime']", path);
 
                     // Wait for the image preview and caption box to load
-                    page.waitForSelector("div[contenteditable='true'][data-tab='10']", new Page.WaitForSelectorOptions().setTimeout(10000));
+                    page.waitForSelector("div[contenteditable='true'][data-tab='10']",
+                            new Page.WaitForSelectorOptions().setTimeout(10000));
 
                     // Type the message into the caption box if provided
                     if (message != null && !message.trim().isEmpty()) {
@@ -131,16 +136,16 @@ public class WhatsappService {
 
     private void sendTextOnly(Page page, String phone, String message) {
         try {
-             if(message == null || message.trim().isEmpty()){
-                 System.out.println("Message is empty, skipping sending.");
-                 return;
-             }
-             // For text only, the message is prefilled by URL, just wait for send button
-             page.waitForSelector("span[data-icon='send']", new Page.WaitForSelectorOptions().setTimeout(10000));
-             page.click("span[data-icon='send']");
-             System.out.println("Successfully sent text message to " + phone);
+            if (message == null || message.trim().isEmpty()) {
+                System.out.println("Message is empty, skipping sending.");
+                return;
+            }
+            // For text only, the message is prefilled by URL, just wait for send button
+            page.waitForSelector("span[data-icon='send']", new Page.WaitForSelectorOptions().setTimeout(10000));
+            page.click("span[data-icon='send']");
+            System.out.println("Successfully sent text message to " + phone);
         } catch (Exception e) {
-             System.err.println("Failed to click send button for " + phone + ": " + e.getMessage());
+            System.err.println("Failed to click send button for " + phone + ": " + e.getMessage());
         }
     }
 
