@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Automation Bot</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+        .section { margin-bottom: 20px; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+        .contact-list { max-height: 200px; overflow-y: auto; border: 1px solid #eee; padding: 10px; margin-bottom: 10px; }
+        .contact-item { margin-bottom: 5px; }
+        label { display: block; margin-top: 10px; font-weight: bold; }
+        textarea, input[type="text"] { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; }
+        button { background-color: #25D366; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-size: 16px; margin-top: 10px; }
+        button:hover { background-color: #1DA851; }
+        #status { margin-top: 15px; padding: 10px; border-radius: 5px; display: none; }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <h1>WhatsApp Automation Bot</h1>
+
+    <div class="section">
+        <h3>Select Contacts</h3>
+        <div class="contact-list" id="contactList">
+            <!-- Contacts will be loaded here -->
+            <em>Loading contacts...</em>
+        </div>
+        <button type="button" onclick="selectAll()">Select All</button>
+        <button type="button" onclick="deselectAll()">Deselect All</button>
+    </div>
+
+    <div class="section">
+        <h3>Compose Message</h3>
+        <label for="messageText">Message (optional, overrides default):</label>
+        <textarea id="messageText" rows="4" placeholder="Enter your message here..."></textarea>
+
+        <label for="imagePath">Image Path (optional, overrides default):</label>
+        <input type="text" id="imagePath" placeholder="e.g., /path/to/image.jpg">
+
+        <button onclick="sendMessages()">Send Messages</button>
+        <div id="status"></div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', fetchContacts);
+
+        async function fetchContacts() {
+            try {
+                const response = await fetch('/api/contacts');
+                const contacts = await response.json();
+                const container = document.getElementById('contactList');
+                container.innerHTML = '';
+
+                if (contacts.length === 0) {
+                    container.innerHTML = '<em>No contacts found.</em>';
+                    return;
+                }
+
+                contacts.forEach((contact, index) => {
+                    const div = document.createElement('div');
+                    div.className = 'contact-item';
+
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.id = `contact-${index}`;
+                    checkbox.value = contact.phone;
+                    checkbox.className = 'contact-checkbox';
+
+                    const label = document.createElement('label');
+                    label.htmlFor = `contact-${index}`;
+                    label.style.display = 'inline';
+                    label.style.fontWeight = 'normal';
+                    label.textContent = ` ${contact.phone} ${contact.message ? `(Msg: ${contact.message})` : ''} ${contact.imagePath ? `(Img: ${contact.imagePath})` : ''}`;
+
+                    div.appendChild(checkbox);
+                    div.appendChild(label);
+                    container.appendChild(div);
+                });
+            } catch (error) {
+                console.error('Error fetching contacts:', error);
+                document.getElementById('contactList').innerHTML = '<em style="color:red;">Error loading contacts. Ensure backend is running.</em>';
+            }
+        }
+
+        function selectAll() {
+            document.querySelectorAll('.contact-checkbox').forEach(cb => cb.checked = true);
+        }
+
+        function deselectAll() {
+            document.querySelectorAll('.contact-checkbox').forEach(cb => cb.checked = false);
+        }
+
+        async function sendMessages() {
+            const checkboxes = document.querySelectorAll('.contact-checkbox:checked');
+            const phones = Array.from(checkboxes).map(cb => cb.value);
+
+            if (phones.length === 0) {
+                showStatus('Please select at least one contact.', 'error');
+                return;
+            }
+
+            const message = document.getElementById('messageText').value;
+            const imagePath = document.getElementById('imagePath').value;
+
+            const payload = {
+                phones: phones,
+                message: message,
+                imagePath: imagePath
+            };
+
+            const btn = document.querySelector('button[onclick="sendMessages()"]');
+            btn.disabled = true;
+            btn.textContent = 'Sending...';
+            hideStatus();
+
+            try {
+                const response = await fetch('/api/send', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.text();
+
+                if (response.ok) {
+                    showStatus(result, 'success');
+                    document.getElementById('messageText').value = '';
+                    document.getElementById('imagePath').value = '';
+                } else {
+                    showStatus(result, 'error');
+                }
+            } catch (error) {
+                console.error('Error sending messages:', error);
+                showStatus('Network error while sending request.', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Send Messages';
+            }
+        }
+
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = type;
+            statusDiv.style.display = 'block';
+        }
+
+        function hideStatus() {
+            document.getElementById('status').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
